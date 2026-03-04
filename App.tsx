@@ -10,51 +10,79 @@ import { AdminPanel } from './components/AdminPanel';
 import { Bill } from './types';
 import { LayoutDashboard, PieChart, Bell, Settings as SettingsIcon, Menu, Shield, LogOut, LockKeyhole } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
+import { dbService } from './services/dbService';
 
 const App: React.FC = () => {
-  const { user, logout, loading } = useAuth();
+  const { user, logout, loading: authLoading } = useAuth();
   const [bills, setBills] = useState<Bill[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
   const [view, setView] = useState<'dashboard' | 'upload' | 'settings' | 'admin'>('dashboard');
   const [showReminder, setShowReminder] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Derived key for storing user-specific data
-  const STORAGE_KEY = user ? `milemaster_bills_${user.id}` : null;
-
-  // Load from local storage when user changes
+  // Load data from DB when user logs in
   useEffect(() => {
-    if (STORAGE_KEY) {
-      const savedBills = localStorage.getItem(STORAGE_KEY);
-      if (savedBills) {
-        setBills(JSON.parse(savedBills));
-      } else {
-        setBills([]); // Reset if new user has no data
+    if (user) {
+      setDataLoading(true);
+      dbService.getBills(user.id)
+        .then(setBills)
+        .catch(console.error)
+        .finally(() => setDataLoading(false));
+    } else {
+        setBills([]);
+    }
+  }, [user]);
+
+  const refreshBills = async () => {
+      if (user) {
+          const freshBills = await dbService.getBills(user.id);
+          setBills(freshBills);
       }
-    }
-  }, [STORAGE_KEY]);
+  };
 
-  // Save to local storage on bill change
-  useEffect(() => {
-    if (STORAGE_KEY && bills) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(bills));
-    }
-  }, [bills, STORAGE_KEY]);
-
-  const handleBillsProcessed = (newBills: Bill[]) => {
-    setBills(prev => [...prev, ...newBills]);
+  const handleBillsProcessed = async (newBills: Bill[]) => {
+    // Add locally for instant UI feedback, but refresh to ensure sync
+    await refreshBills();
     setView('dashboard');
   };
 
-  const handleUpdateBill = (updatedBill: Bill) => {
+  const handleUpdateBill = async (updatedBill: Bill) => {
+    // Optimistic update
     setBills(prev => prev.map(b => b.id === updatedBill.id ? updatedBill : b));
+    
+    try {
+        await dbService.updateBill(updatedBill);
+    } catch (error) {
+        console.error("Failed to sync update", error);
+        // Revert on error would go here
+    }
   };
 
-  const handleAddBill = (newBill: Bill) => {
-    setBills(prev => [...prev, newBill]);
+  const handleAddBill = async (newBill: Bill) => {
+    if (!user) return;
+    try {
+        await dbService.createBill(newBill, user.id);
+        await refreshBills();
+    } catch (error) {
+        console.error("Failed to create manual bill", error);
+    }
   };
 
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-pulse text-indigo-600">Loading MileMaster...</div></div>;
+  const handleDeleteBill = async (billId: string) => {
+    // Optimistic update
+    setBills(prev => prev.filter(b => b.id !== billId));
+    
+    try {
+        await dbService.deleteBill(billId);
+    } catch (error) {
+        console.error("Failed to delete bill", error);
+        // Revert on error
+        await refreshBills();
+    }
+  };
+
+  if (authLoading) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-pulse text-indigo-600">Loading CreditTrack...</div></div>;
   }
 
   // If not logged in, show the new Landing/Auth Page
@@ -68,7 +96,7 @@ const App: React.FC = () => {
       <div className="lg:hidden bg-white border-b border-gray-200 p-4 flex justify-between items-center sticky top-0 z-20">
          <div className="flex items-center gap-2 text-indigo-600 font-bold text-xl">
              <Shield className="w-6 h-6" />
-             MileMaster
+             CreditTrack
          </div>
          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
              <Menu className="w-6 h-6 text-gray-600" />
@@ -84,9 +112,9 @@ const App: React.FC = () => {
             <div className="p-6 flex flex-col border-b border-gray-100">
                 <div className="flex items-center gap-2 text-indigo-600 font-bold text-2xl mb-1">
                     <Shield className="w-8 h-8" />
-                    MileMaster
+                    CreditTrack
                 </div>
-                <span className="text-xs text-gray-400 ml-10">v1.3.0</span>
+                <span className="text-xs text-gray-400 ml-10">EliteX.CC Group</span>
             </div>
             
             <div className="px-6 py-4">
@@ -132,13 +160,6 @@ const App: React.FC = () => {
 
                 <div className="pt-8 mt-8 border-t border-gray-100">
                     <button 
-                        onClick={() => { setShowReminder(true); setIsMobileMenuOpen(false); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-gray-600 hover:bg-gray-50"
-                    >
-                        <Bell className="w-5 h-5" />
-                        Generate Reminder
-                    </button>
-                    <button 
                         onClick={() => { setView('settings'); setIsMobileMenuOpen(false); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${view === 'settings' ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50'}`}
                     >
@@ -163,7 +184,7 @@ const App: React.FC = () => {
                     <header className="flex justify-between items-center">
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900">Financial Overview</h1>
-                            <p className="text-gray-500">Welcome back, {user.name}. Here is your summary.</p>
+                            <p className="text-gray-500">Welcome back, {user.name}. Here is your 2026 summary.</p>
                         </div>
                         <button 
                             onClick={() => setView('upload')}
@@ -173,13 +194,19 @@ const App: React.FC = () => {
                         </button>
                     </header>
 
-                    <InsightPanel bills={bills} />
-                    
-                    <Dashboard 
-                        bills={bills} 
-                        onUpdateBill={handleUpdateBill}
-                        onAddBill={handleAddBill}
-                    />
+                    {dataLoading && bills.length === 0 ? (
+                        <div className="h-40 flex items-center justify-center text-gray-400">Loading your data...</div>
+                    ) : (
+                        <>
+                            <InsightPanel bills={bills} />
+                            <Dashboard 
+                                bills={bills} 
+                                onUpdateBill={handleUpdateBill}
+                                onAddBill={handleAddBill}
+                                onDeleteBill={handleDeleteBill}
+                            />
+                        </>
+                    )}
                 </div>
             )}
 
@@ -209,6 +236,8 @@ const App: React.FC = () => {
         </main>
       </div>
 
+      {/* Manual Reminder Modal can be kept for testing via Settings if needed, or removed. 
+          Keeping it conditional based on state for backward compatibility if logic restored */}
       <ReminderModal 
         bills={bills} 
         isOpen={showReminder} 

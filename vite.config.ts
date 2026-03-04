@@ -7,9 +7,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // This ensures process.env.API_KEY works in the production build
-      // by replacing it with the value from your hosting provider's environment variables
-      'process.env.API_KEY': JSON.stringify(env.API_KEY)
+      'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || env.GEMINI_API_KEY),
+      'process.env.API_KEY': JSON.stringify(process.env.API_KEY || env.API_KEY)
     }
   };
 });

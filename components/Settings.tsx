@@ -2,10 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { UserSettings } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { Save, Bell, Mail, Clock, Lock, CheckCircle, AlertCircle } from 'lucide-react';
+import { Save, Bell, Mail, Clock, Lock, CheckCircle, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
 
 export const Settings: React.FC = () => {
-  const { changePassword } = useAuth();
+  const { changePassword, user } = useAuth();
   const [settings, setSettings] = useState<UserSettings>({
     email: '',
     notificationFrequency: 'weekly',
@@ -13,20 +13,23 @@ export const Settings: React.FC = () => {
   });
   const [saved, setSaved] = useState(false);
   
-  // Password State
   const [passwords, setPasswords] = useState({ new: '', confirm: '' });
   const [passMsg, setPassMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   useEffect(() => {
-    const savedSettings = localStorage.getItem('milemaster_settings');
+    const savedSettings = localStorage.getItem('credittrack_settings');
     if (savedSettings) {
       setSettings(JSON.parse(savedSettings));
     }
-  }, []);
+    if (user?.email && (!savedSettings)) {
+        setSettings(prev => ({ ...prev, email: user.email }));
+    }
+  }, [user]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('milemaster_settings', JSON.stringify(settings));
+    localStorage.setItem('credittrack_settings', JSON.stringify(settings));
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -34,68 +37,79 @@ export const Settings: React.FC = () => {
   const handleChangePassword = async (e: React.FormEvent) => {
       e.preventDefault();
       setPassMsg(null);
-      if (passwords.new.length < 6) {
-          setPassMsg({ type: 'error', text: 'Password must be at least 6 characters.' });
+      
+      if (passwords.new.length < 8) {
+          setPassMsg({ type: 'error', text: 'Password must be at least 8 characters for EliteX compliance.' });
           return;
       }
       if (passwords.new !== passwords.confirm) {
-          setPassMsg({ type: 'error', text: 'Passwords do not match.' });
+          setPassMsg({ type: 'error', text: 'Confirmed password does not match original entry.' });
           return;
       }
 
+      setIsChangingPassword(true);
+
       try {
+          // The supabase call is handled inside context
           await changePassword(passwords.new);
-          setPassMsg({ type: 'success', text: 'Password updated successfully.' });
+          setPassMsg({ type: 'success', text: 'Security credentials updated successfully.' });
           setPasswords({ new: '', confirm: '' });
-      } catch (err) {
-          setPassMsg({ type: 'error', text: 'Failed to update password.' });
+          
+          // Clear success message after 5 seconds
+          setTimeout(() => setPassMsg(null), 5000);
+      } catch (err: any) {
+          console.error("Security update failed:", err);
+          setPassMsg({ 
+              type: 'error', 
+              text: err.message || 'Security update rejected by server. Please re-authenticate.' 
+          });
+      } finally {
+          setIsChangingPassword(false);
       }
   };
 
   return (
-    <div className="max-w-2xl mx-auto animate-fade-in pb-10">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">App Settings</h1>
-        <p className="text-gray-500">Configure your notifications and preferences.</p>
+    <div className="max-w-2xl mx-auto animate-fade-in pb-16">
+      <header className="mb-10">
+        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">System Preferences</h1>
+        <p className="text-gray-500 mt-1">Manage your identity and security configuration for 2026.</p>
       </header>
 
       <div className="space-y-8">
           {/* General Preferences */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <form onSubmit={handleSave} className="p-6 space-y-8">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <form onSubmit={handleSave} className="p-8 space-y-8">
             
-            {/* Email Section */}
-            <div className="space-y-4">
-                <div className="flex items-center gap-2 text-gray-900 font-semibold pb-2 border-b border-gray-100">
-                <Mail className="w-5 h-5 text-indigo-600" />
-                <h3>Contact Information</h3>
-                </div>
-                <div className="grid gap-2">
-                <label className="text-sm font-medium text-gray-700">Email Address</label>
-                <input 
-                    type="email"
-                    required
-                    placeholder="jerome@example.com"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={settings.email}
-                    onChange={(e) => setSettings({...settings, email: e.target.value})}
-                />
-                <p className="text-xs text-gray-500">We'll use this to address the payment reminder drafts.</p>
-                </div>
-            </div>
-
-            {/* Notification Section */}
-            <div className="space-y-4">
-                <div className="flex items-center gap-2 text-gray-900 font-semibold pb-2 border-b border-gray-100">
-                <Bell className="w-5 h-5 text-indigo-600" />
-                <h3>Notifications & Alerts</h3>
+            <div className="space-y-6">
+                <div className="flex items-center gap-3 text-gray-900 font-bold border-b border-gray-50 pb-4">
+                    <div className="bg-indigo-50 p-2 rounded-lg">
+                        <Mail className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <h3>Contact & Reminders</h3>
                 </div>
                 
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <label className="text-sm font-medium text-gray-700">Enable Reminders</label>
-                            <p className="text-xs text-gray-500">Get alerted about upcoming due dates.</p>
+                <div className="grid gap-6">
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold uppercase tracking-wider text-gray-500">Verified Email Address</label>
+                        <input 
+                            type="email"
+                            required
+                            placeholder="name@elitex.cc"
+                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
+                            value={settings.email}
+                            onChange={(e) => setSettings({...settings, email: e.target.value})}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                        <div className="flex items-center gap-4">
+                            <div className={`p-2 rounded-full ${settings.reminderEnabled ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-400'}`}>
+                                <Bell className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <label className="text-sm font-bold text-gray-800">Payment Proximity Alerts</label>
+                                <p className="text-xs text-gray-500">Automated reminders for bills due within 72 hours.</p>
+                            </div>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
                             <input 
@@ -104,91 +118,111 @@ export const Settings: React.FC = () => {
                                 checked={settings.reminderEnabled}
                                 onChange={(e) => setSettings({...settings, reminderEnabled: e.target.checked})}
                             />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                            <div className="w-12 h-6.5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
                         </label>
                     </div>
 
-                    <div className={`space-y-2 transition-opacity ${settings.reminderEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-gray-400" />
-                            Reminder Frequency
-                        </label>
-                        <select 
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
-                            value={settings.notificationFrequency}
-                            onChange={(e) => setSettings({...settings, notificationFrequency: e.target.value as any})}
-                        >
-                            <option value="6hours">Every 6 Hours (High Urgency)</option>
-                            <option value="daily">Daily (Standard)</option>
-                            <option value="weekly">Weekly (Summary)</option>
-                        </select>
-                        <p className="text-xs text-gray-500 bg-blue-50 text-blue-700 p-3 rounded-lg mt-2">
-                            Note: Since this is a web app, actual push notifications require the browser tab to be open or a backend server. 
-                            This setting controls the frequency of "Risk Alerts" on your dashboard.
-                        </p>
-                    </div>
+                    {settings.reminderEnabled && (
+                        <div className="space-y-4 animate-in slide-in-from-top-2">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    Monitoring Intensity
+                                </label>
+                                <select 
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white transition-all text-sm"
+                                    value={settings.notificationFrequency}
+                                    onChange={(e) => setSettings({...settings, notificationFrequency: e.target.value as any})}
+                                >
+                                    <option value="6hours">Critical Monitor (Every 6 Hours)</option>
+                                    <option value="daily">Standard Monitor (Daily Check)</option>
+                                    <option value="weekly">Passive Monitor (Weekly Digest)</option>
+                                </select>
+                            </div>
+                            
+                            <div className="pt-2">
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        try {
+                                            const res = await fetch('/api/trigger-reminders', { method: 'POST' });
+                                            if (res.ok) alert('Reminders triggered successfully! Check server logs for Ethereal Email preview URLs.');
+                                            else alert('Failed to trigger reminders.');
+                                        } catch (e) {
+                                            alert('Error triggering reminders.');
+                                        }
+                                    }}
+                                    className="text-xs font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-2"
+                                >
+                                    <Mail className="w-4 h-4" />
+                                    Test Daily Reminder Now
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* Save Button */}
             <div className="pt-4 flex justify-end">
                 <button 
                     type="submit"
-                    className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-white font-medium transition-all ${
-                        saved ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                    className={`flex items-center gap-2 px-8 py-3 rounded-xl text-white font-bold text-sm transition-all shadow-lg ${
+                        saved ? 'bg-emerald-600 shadow-emerald-200' : 'bg-indigo-600 shadow-indigo-200 hover:bg-indigo-700'
                     }`}
                 >
                     {saved ? (
-                        <>Saved Successfully</>
+                        <><CheckCircle className="w-4 h-4" /> Preferences Updated</>
                     ) : (
-                        <>
-                            <Save className="w-4 h-4" />
-                            Save Preferences
-                        </>
+                        <><Save className="w-4 h-4" /> Apply Changes</>
                     )}
                 </button>
             </div>
-
             </form>
           </div>
 
           {/* Security Section */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-6 space-y-6">
-                <div className="flex items-center gap-2 text-gray-900 font-semibold pb-2 border-b border-gray-100">
-                    <Lock className="w-5 h-5 text-indigo-600" />
-                    <h3>Security</h3>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-8 space-y-8">
+                <div className="flex items-center gap-3 text-gray-900 font-bold border-b border-gray-50 pb-4">
+                    <div className="bg-red-50 p-2 rounded-lg">
+                        <Lock className="w-5 h-5 text-red-600" />
+                    </div>
+                    <h3>Security & Encryption</h3>
                 </div>
                 
-                <form onSubmit={handleChangePassword} className="space-y-4">
-                    <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <form onSubmit={handleChangePassword} className="space-y-6">
+                    <div className="grid md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-gray-500">New Vault Key</label>
                             <input 
                                 type="password"
                                 required
-                                minLength={6}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                                minLength={8}
+                                placeholder="Min 8 characters"
+                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none transition-all"
                                 value={passwords.new}
                                 onChange={(e) => setPasswords({...passwords, new: e.target.value})}
+                                disabled={isChangingPassword}
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-gray-500">Confirm Vault Key</label>
                             <input 
                                 type="password"
                                 required
-                                minLength={6}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                                minLength={8}
+                                placeholder="Verify entry"
+                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none transition-all"
                                 value={passwords.confirm}
                                 onChange={(e) => setPasswords({...passwords, confirm: e.target.value})}
+                                disabled={isChangingPassword}
                             />
                         </div>
                     </div>
                     
                     {passMsg && (
-                        <div className={`text-sm flex items-center gap-2 ${passMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                            {passMsg.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                        <div className={`text-sm flex items-center gap-3 p-4 rounded-xl font-medium animate-in slide-in-from-top-2 ${passMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                            {passMsg.type === 'success' ? <ShieldCheck className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
                             {passMsg.text}
                         </div>
                     )}
@@ -196,9 +230,11 @@ export const Settings: React.FC = () => {
                     <div className="flex justify-end">
                         <button 
                             type="submit"
-                            className="bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-900 text-sm font-medium transition-colors"
+                            disabled={isChangingPassword}
+                            className="bg-gray-900 text-white px-8 py-3 rounded-xl hover:bg-black text-sm font-bold transition-all shadow-lg shadow-gray-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
                         >
-                            Update Password
+                            {isChangingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                            Rotate Keys
                         </button>
                     </div>
                 </form>

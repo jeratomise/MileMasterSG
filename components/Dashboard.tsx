@@ -1,15 +1,18 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { Bill, PaymentDetails } from '../types';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend } from 'recharts';
-import { AlertTriangle, CheckCircle, Clock, Plus, Filter, TrendingUp, Pencil } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer, Tooltip } from 'recharts';
+import { AlertTriangle, CheckCircle, Clock, Plus, Filter, TrendingUp, Pencil, FileText, ExternalLink, Calendar, Trash2 } from 'lucide-react';
 import { PaymentModal } from './PaymentModal';
 import { ManualBillModal } from './ManualBillModal';
 import { EditBillModal } from './EditBillModal';
+import { dbService } from '../services/dbService';
 
 interface DashboardProps {
   bills: Bill[];
   onUpdateBill: (bill: Bill) => void;
   onAddBill: (bill: Bill) => void;
+  onDeleteBill: (billId: string) => void;
 }
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -25,7 +28,7 @@ const BANK_COLORS: Record<string, string> = {
 };
 const DEFAULT_BANK_COLORS = ['#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#f97316'];
 
-export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAddBill }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAddBill, onDeleteBill }) => {
   const [selectedBillForPayment, setSelectedBillForPayment] = useState<Bill | null>(null);
   const [billToEdit, setBillToEdit] = useState<Bill | null>(null);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
@@ -35,14 +38,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
     bills.filter(b => !b.isPaid).reduce((acc, b) => acc + b.totalAmount, 0), 
   [bills]);
 
+  // ------------------------------------------------------------------
+  // Logic for Category List (Bar Format)
+  // ------------------------------------------------------------------
   const categoryData = useMemo(() => {
     const categories: Record<string, number> = {};
+    let grandTotal = 0;
     bills.forEach(bill => {
       bill.transactions.forEach(t => {
-        categories[t.category] = (categories[t.category] || 0) + t.amount;
+        const amount = t.amount;
+        categories[t.category] = (categories[t.category] || 0) + amount;
+        grandTotal += amount;
       });
     });
-    return Object.keys(categories).map(key => ({ name: key, value: categories[key] }));
+    
+    // Sort and limit to top 5, group rest as other
+    const sorted = Object.keys(categories)
+        .map(key => ({ name: key, value: categories[key], percentage: (categories[key] / (grandTotal || 1)) * 100 }))
+        .sort((a, b) => b.value - a.value);
+
+    return { data: sorted, total: grandTotal };
   }, [bills]);
 
   // ------------------------------------------------------------------
@@ -128,14 +143,50 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
   };
 
   const formatDateForDisplay = (dateStr: string) => {
+     if (!dateStr) return 'N/A';
      const date = new Date(dateStr);
      return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
+  // Days remaining helper
+  const getDaysRemaining = (dueDateStr: string) => {
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const due = new Date(dueDateStr);
+      due.setHours(0,0,0,0);
+      const diffTime = due.getTime() - today.getTime();
+      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const getUrgencyColor = (days: number) => {
+      if (days < 0) return 'text-red-600 bg-red-100'; // Overdue
+      if (days <= 3) return 'text-orange-600 bg-orange-100'; // Critical
+      if (days <= 7) return 'text-yellow-600 bg-yellow-100'; // Warning
+      return 'text-green-600 bg-green-100'; // Safe
+  };
+
+  const getUrgencyLabel = (days: number) => {
+      if (days < 0) return `Overdue by ${Math.abs(days)} days`;
+      if (days === 0) return 'Due Today';
+      if (days === 1) return 'Due Tomorrow';
+      return `Due in ${days} days`;
+  };
+
   const getMonthLabel = (yyyyMm: string) => {
+    if (!yyyyMm) return '';
     const [year, month] = yyyyMm.split('-');
     const date = new Date(parseInt(year), parseInt(month) - 1, 1);
     return date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }).toUpperCase();
+  };
+
+  const handleViewDocument = async (bill: Bill) => {
+      if (!bill.filePath) return;
+      const url = await dbService.getBillFileUrl(bill.filePath);
+      if (url) {
+          window.open(url, '_blank');
+      } else {
+          alert("Could not retrieve document. It may have been deleted.");
+      }
   };
 
   return (
@@ -145,11 +196,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm text-gray-500">Total Outstanding</p>
-              <h3 className="text-2xl font-bold text-gray-900">${totalDue.toFixed(2)}</h3>
+              <p className="text-sm text-gray-500 font-medium">Total Outstanding</p>
+              <h3 className="text-3xl font-bold text-gray-900 mt-1">${totalDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
             </div>
-            <div className="bg-red-100 p-2 rounded-lg">
-              <AlertTriangle className="w-5 h-5 text-red-600" />
+            <div className="bg-red-50 p-2.5 rounded-xl">
+              <AlertTriangle className="w-6 h-6 text-red-600" />
             </div>
           </div>
         </div>
@@ -157,11 +208,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm text-gray-500">Bills Due Soon</p>
-              <h3 className="text-2xl font-bold text-gray-900">{upcomingBills.length}</h3>
+              <p className="text-sm text-gray-500 font-medium">Bills Due Soon</p>
+              <h3 className="text-3xl font-bold text-gray-900 mt-1">{upcomingBills.length}</h3>
             </div>
-            <div className="bg-yellow-100 p-2 rounded-lg">
-              <Clock className="w-5 h-5 text-yellow-600" />
+            <div className="bg-yellow-50 p-2.5 rounded-xl">
+              <Clock className="w-6 h-6 text-yellow-600" />
             </div>
           </div>
         </div>
@@ -169,11 +220,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
            <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm text-gray-500">Processed Bills</p>
-              <h3 className="text-2xl font-bold text-gray-900">{bills.length}</h3>
+              <p className="text-sm text-gray-500 font-medium">Processed Bills</p>
+              <h3 className="text-3xl font-bold text-gray-900 mt-1">{bills.length}</h3>
             </div>
-             <div className="bg-green-100 p-2 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600" />
+             <div className="bg-green-50 p-2.5 rounded-xl">
+              <CheckCircle className="w-6 h-6 text-green-600" />
             </div>
           </div>
         </div>
@@ -183,54 +234,78 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Upcoming List */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-80 overflow-y-auto">
-          <h3 className="text-lg font-semibold mb-4">Upcoming Deadlines</h3>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-96 flex flex-col">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-indigo-600" />
+              Upcoming Deadlines
+          </h3>
           {upcomingBills.length === 0 ? (
-            <p className="text-gray-400 text-center mt-10">No upcoming bills. Great job!</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                <CheckCircle className="w-12 h-12 mb-2 opacity-20" />
+                <p>All clear! No bills pending.</p>
+            </div>
           ) : (
-            <div className="space-y-3">
-              {upcomingBills.map(bill => (
-                <div key={bill.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 hover:border-primary/30 transition-colors">
-                  <div>
-                    <p className="font-medium text-gray-800">{bill.bankName} - {bill.cardName}</p>
-                    <p className="text-xs text-gray-500">Due: {bill.dueDate}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-gray-900">${bill.totalAmount.toFixed(2)}</p>
-                    <span className="text-xs text-red-500 font-medium bg-red-50 px-2 py-1 rounded-full">Unpaid</span>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+              {upcomingBills.map(bill => {
+                  const daysLeft = getDaysRemaining(bill.dueDate);
+                  return (
+                    <div key={bill.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 hover:border-primary/30 transition-all">
+                      <div className="flex flex-col">
+                        <p className="font-semibold text-gray-800 text-sm">{bill.bankName} • {bill.cardName}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{formatDateForDisplay(bill.dueDate)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-gray-900 text-sm">${bill.totalAmount.toFixed(2)}</p>
+                        <span className={`inline-block mt-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getUrgencyColor(daysLeft)}`}>
+                            {getUrgencyLabel(daysLeft)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+              })}
             </div>
           )}
         </div>
 
-        {/* Spend Breakdown Pie Chart */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-80">
-          <h3 className="text-lg font-semibold mb-4">Spend by Category</h3>
-          {categoryData.length > 0 ? (
-             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-             <div className="flex items-center justify-center h-full text-gray-400">No Data Available</div>
-          )}
+        {/* Spend Breakdown - REPLACED PIE CHART WITH LIST */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-96 flex flex-col">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-indigo-600" />
+            Spend by Category
+          </h3>
+          
+          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              {categoryData.data.length > 0 ? (
+                  <div className="space-y-4">
+                      {categoryData.data.map((cat, index) => (
+                          <div key={cat.name} className="group">
+                              <div className="flex justify-between items-end mb-1">
+                                  <span className="text-sm font-medium text-gray-700">{cat.name}</span>
+                                  <div className="text-right">
+                                      <span className="text-sm font-bold text-gray-900">${cat.value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                      <span className="text-xs text-gray-400 ml-2">({cat.percentage.toFixed(1)}%)</span>
+                                  </div>
+                              </div>
+                              <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full rounded-full transition-all duration-500 ease-out"
+                                    style={{ 
+                                        width: `${cat.percentage}%`,
+                                        backgroundColor: COLORS[index % COLORS.length]
+                                    }}
+                                  ></div>
+                              </div>
+                          </div>
+                      ))}
+                      <div className="pt-2 mt-2 border-t border-gray-100 text-right">
+                          <span className="text-xs text-gray-400">Total Tracked Spend: </span>
+                          <span className="text-sm font-bold text-gray-700">${categoryData.total.toLocaleString()}</span>
+                      </div>
+                  </div>
+              ) : (
+                  <div className="h-full flex items-center justify-center text-gray-400">No transaction data available yet.</div>
+              )}
+          </div>
         </div>
       </div>
 
@@ -239,7 +314,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
           <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-indigo-600" />
-                  Spend Trend by Bank
+                  Monthly Spend Trend by Bank
               </h3>
           </div>
           <div className="h-80">
@@ -249,15 +324,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
                         data={clusteredData} 
                         margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
                     >
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="name" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-                        <YAxis tick={{fontSize: 12}} axisLine={false} tickLine={false} prefix="$" />
-                        <RechartsTooltip 
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                        <XAxis dataKey="name" tick={{fontSize: 12, fill: '#6b7280'}} axisLine={false} tickLine={false} dy={10} />
+                        <YAxis tick={{fontSize: 12, fill: '#6b7280'}} axisLine={false} tickLine={false} prefix="$" />
+                        <Tooltip 
                             formatter={(value: number, name: string) => [`$${value.toLocaleString()}`, name]}
-                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                            cursor={{ fill: '#f3f4f6' }}
+                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                            cursor={{ fill: '#f9fafb' }}
                         />
-                        <Legend />
+                        <Legend wrapperStyle={{paddingTop: '20px'}} />
                         
                         {uniqueBanks.map((bank, index) => (
                             <Bar 
@@ -265,6 +340,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
                                 dataKey={bank} 
                                 fill={BANK_COLORS[bank] || DEFAULT_BANK_COLORS[index % DEFAULT_BANK_COLORS.length]} 
                                 radius={[4, 4, 0, 0]} 
+                                barSize={40}
                             />
                         ))}
                     </BarChart>
@@ -347,7 +423,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
                                       <div className="font-medium text-gray-900">{bill.cardName}</div>
                                       <div className="text-xs text-gray-400">{bill.bankName}</div>
                                   </td>
-                                  <td className="px-6 py-4">{formatDateForDisplay(bill.dueDate)}</td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex flex-col">
+                                        <span>{formatDateForDisplay(bill.dueDate)}</span>
+                                        {!bill.isPaid && (
+                                            <span className={`text-[10px] font-bold uppercase ${
+                                                getDaysRemaining(bill.dueDate) <= 3 ? 'text-red-600' : 'text-gray-400'
+                                            }`}>
+                                                {getDaysRemaining(bill.dueDate)} days left
+                                            </span>
+                                        )}
+                                    </div>
+                                  </td>
                                   <td className="px-6 py-4 font-medium">${bill.totalAmount.toFixed(2)}</td>
                                   <td className="px-6 py-4">
                                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -370,6 +457,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
                                   </td>
                                   <td className="px-6 py-4">
                                       <div className="flex items-center gap-2">
+                                          {bill.filePath && (
+                                              <button 
+                                                  onClick={() => handleViewDocument(bill)}
+                                                  className="p-2 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-full transition-colors"
+                                                  title="View Uploaded Document"
+                                              >
+                                                  <FileText className="w-4 h-4" />
+                                              </button>
+                                          )}
+
                                           {!bill.isPaid ? (
                                               <button 
                                                   onClick={() => setSelectedBillForPayment(bill)}
@@ -400,6 +497,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ bills, onUpdateBill, onAdd
                                             title="Edit Bill Details"
                                           >
                                               <Pencil className="w-4 h-4" />
+                                          </button>
+
+                                          <button 
+                                            onClick={() => {
+                                                if (window.confirm('Are you sure you want to delete this bill?')) {
+                                                    onDeleteBill(bill.id);
+                                                }
+                                            }}
+                                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                                            title="Delete Bill"
+                                          >
+                                              <Trash2 className="w-4 h-4" />
                                           </button>
                                       </div>
                                   </td>

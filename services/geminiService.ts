@@ -1,10 +1,11 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { MILELION_SYSTEM_PROMPT } from "../constants";
 import { AIExtractionResponse } from "../types";
 
 // Initialize GenAI client
 // Note: In a production app, API keys should be handled via a backend proxy.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY });
 
 export const extractBillData = async (base64Data: string, mimeType: string = "image/png"): Promise<AIExtractionResponse> => {
   try {
@@ -19,26 +20,26 @@ export const extractBillData = async (base64Data: string, mimeType: string = "im
             },
           },
           {
-            text: `Analyze this credit card statement document. It often contains multiple different cards (e.g. a consolidated bank statement).
+            text: `Analyze this credit card statement. It is likely a CONSOLIDATED STATEMENT containing multiple cards.
 
-            CRITICAL INSTRUCTION FOR MULTI-CARD STATEMENTS (e.g., Citibank, DBS):
-            1. Look immediately for a "Payment Slip", "Account Summary", "Your Citibank Cards", or "Consolidated Statement" table on the first 1-2 pages.
-            2. This table lists EVERY card account and its "Current Balance" or "Total Amount Due". Use this as the primary source for Card Name and Total Amount.
-            3. Do NOT assume only one card exists. Extract EVERY card listed in that summary table as a separate bill entry.
+            **CRITICAL: SPLIT BY CARD**
+            You must identify *every* distinct card in this document and create a separate bill entry for each.
             
-            For EACH card account found:
-            1. Bank Name (e.g., Citibank, DBS, UOB)
-            2. Card Name (e.g., "Citi Prestige", "DBS Woman's World", "UOB Lady's Card") - Be precise.
-            3. Total Amount Due / Current Balance for that specific card.
-            4. Payment Due Date (found in the summary or header).
-            5. Statement Date.
-            6. Transactions: Scan the subsequent pages for transaction lists belonging to this specific card number or section.
+            **DBS / POSB INSTRUCTIONS:**
+            1.  **Find Card Headers**: Look for gray header bars or lines containing text like **"CARD NO.:"** (e.g., "DBS YUU AMERICAN EXPRESS CARD NO.: XXX", "DBS VANTAGE VISA INFINITE CARD NO.: XXX").
+            2.  **Separate Sections**: Treat each header as the start of a completely new bill.
+            3.  **Extract Specific Total**: For each card section, look for the **"SUB-TOTAL:"** or **"TOTAL:"** row *immediately following* that card's transaction list. Use this as the \`totalAmount\`. Do NOT use the document's Grand Total.
+            4.  **Date**: The "Payment Due Date" is usually common for all cards in the statement (at the top of Page 1). Use that.
             
-            For each transaction:
-            - Date (YYYY-MM-DD)
-            - Description
-            - Amount
-            - Category (Guess based on merchant: Dining, Transport, Online, Travel, Shopping, Groceries)`,
+            **AMEX INSTRUCTIONS:**
+            - Look for "Closing Balance" on the first page.
+            - Date Format: Convert "DD.MM.YYYY" (e.g., 14.12.2025) strictly to "YYYY-MM-DD".
+
+            **GENERIC RULES:**
+            - **Transactions**: Assign transactions only to the card section they appear in.
+            - **Card Name**: Use the specific name found in the header (e.g., "DBS Woman's World Mastercard", "DBS Vantage Visa Infinite").
+
+            Return a JSON object with a 'bills' array containing one object per card found.`,
           },
         ],
       },
@@ -99,7 +100,12 @@ export const generateOptimizationAdvice = async (transactions: any[]) => {
       model: "gemini-2.5-flash",
       contents: `Analyze these transactions based on Singapore specific credit card strategies (Milelion). 
       Identify which transactions missed a bonus mile opportunity (e.g. using a general card for online spend instead of DBS WWMC).
-      Return a short summary advice and a 'risk score' (0-100) based on how many late payment risks or bad card choices exist.
+      
+      **Advice Formatting:**
+      Return the 'advice' field as a single string, but format it clearly as 3 distinct bullet points separated by newlines. Do not use markdown symbols like * or #. Start each point with a unicode bullet (•).
+
+      **Risk Score:**
+      Calculate a 'risk score' (0-100) based on potential for late fees or suboptimal card usage.
       
       Transactions JSON: ${JSON.stringify(transactions)}`,
       config: {
@@ -108,7 +114,7 @@ export const generateOptimizationAdvice = async (transactions: any[]) => {
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            advice: { type: Type.STRING },
+            advice: { type: Type.STRING, description: "3 bullet points starting with •, separated by newlines" },
             riskScore: { type: Type.NUMBER },
             missedMiles: { type: Type.NUMBER, description: "Estimated missed miles count" },
             anomalies: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of unusual transactions" }

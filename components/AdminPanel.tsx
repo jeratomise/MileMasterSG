@@ -8,16 +8,29 @@ export const AdminPanel: React.FC = () => {
   const { user, getAllUsers, toggleUserStatus, systemConfig, updateSystemConfig } = useAuth();
   const [activeTab, setActiveTab] = useState<'users' | 'cms'>('users');
   const [usersList, setUsersList] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   
   // CMS State
   const [cmsForm, setCmsForm] = useState<SystemConfig>(systemConfig);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user?.role === 'admin') {
-      setUsersList(getAllUsers());
+    if (user?.role === 'admin' && activeTab === 'users') {
+      loadUsers();
     }
-  }, [user, activeTab]); // Refresh when tab changes
+  }, [user, activeTab]);
+
+  const loadUsers = async () => {
+      setLoadingUsers(true);
+      try {
+          const list = await getAllUsers();
+          setUsersList(list);
+      } catch (err) {
+          console.error(err);
+      } finally {
+          setLoadingUsers(false);
+      }
+  };
 
   useEffect(() => {
       setCmsForm(systemConfig);
@@ -27,16 +40,20 @@ export const AdminPanel: React.FC = () => {
       return <div className="p-8 text-center text-red-500">Access Denied. Admin privileges required.</div>;
   }
 
-  const handleToggleStatus = (userId: string) => {
-      toggleUserStatus(userId);
-      setUsersList(getAllUsers()); // Refresh list
+  const handleToggleStatus = async (userId: string) => {
+      await toggleUserStatus(userId);
+      await loadUsers(); // Refresh list
   };
 
-  const handleCmsSave = (e: React.FormEvent) => {
+  const handleCmsSave = async (e: React.FormEvent) => {
       e.preventDefault();
-      updateSystemConfig(cmsForm);
-      setSaveStatus("Configuration saved successfully!");
-      setTimeout(() => setSaveStatus(null), 3000);
+      try {
+          await updateSystemConfig(cmsForm);
+          setSaveStatus("Configuration saved successfully!");
+          setTimeout(() => setSaveStatus(null), 3000);
+      } catch (err) {
+          setSaveStatus("Error saving config.");
+      }
   };
 
   const updateBullet = (index: number, value: string) => {
@@ -97,59 +114,61 @@ export const AdminPanel: React.FC = () => {
       {activeTab === 'users' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-gray-600">
-                    <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500">
-                        <tr>
-                            <th className="px-6 py-4">User</th>
-                            <th className="px-6 py-4">Role</th>
-                            <th className="px-6 py-4">Joined</th>
-                            <th className="px-6 py-4">Status</th>
-                            <th className="px-6 py-4">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {usersList.map(u => (
-                            <tr key={u.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4">
-                                    <div className="font-medium text-gray-900">{u.name}</div>
-                                    <div className="text-xs text-gray-400">{u.email}</div>
-                                </td>
-                                <td className="px-6 py-4">
-                                    <span className={`px-2 py-1 rounded text-xs font-medium uppercase ${
-                                        u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
-                                    }`}>
-                                        {u.role}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4">
-                                    {new Date(u.joinedAt).toLocaleDateString()}
-                                </td>
-                                <td className="px-6 py-4">
-                                    <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${
-                                        u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                                    }`}>
-                                        {u.status === 'active' ? 'Active' : 'Suspended'}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4">
-                                    {u.email !== 'admin@milemaster.com' && u.id !== user?.id && (
-                                        <button 
-                                            onClick={() => handleToggleStatus(u.id)}
-                                            className={`p-2 rounded-lg transition-colors ${
-                                                u.status === 'active' 
-                                                ? 'text-red-500 hover:bg-red-50' 
-                                                : 'text-green-500 hover:bg-green-50'
-                                            }`}
-                                            title={u.status === 'active' ? "Suspend User" : "Activate User"}
-                                        >
-                                            <Power className="w-4 h-4" />
-                                        </button>
-                                    )}
-                                </td>
+                {loadingUsers ? <div className="p-8 text-center text-gray-400">Loading Users...</div> : (
+                    <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500">
+                            <tr>
+                                <th className="px-6 py-4">User</th>
+                                <th className="px-6 py-4">Role</th>
+                                <th className="px-6 py-4">Joined</th>
+                                <th className="px-6 py-4">Status</th>
+                                <th className="px-6 py-4">Action</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {usersList.map(u => (
+                                <tr key={u.id} className="hover:bg-gray-50">
+                                    <td className="px-6 py-4">
+                                        <div className="font-medium text-gray-900">{u.name || "No Name"}</div>
+                                        <div className="text-xs text-gray-400">{u.email}</div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className={`px-2 py-1 rounded text-xs font-medium uppercase ${
+                                            u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
+                                        }`}>
+                                            {u.role}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        {new Date(u.joinedAt).toLocaleDateString()}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${
+                                            u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                        }`}>
+                                            {u.status === 'active' ? 'Active' : 'Suspended'}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        {u.email !== user?.email && (
+                                            <button 
+                                                onClick={() => handleToggleStatus(u.id)}
+                                                className={`p-2 rounded-lg transition-colors ${
+                                                    u.status === 'active' 
+                                                    ? 'text-red-500 hover:bg-red-50' 
+                                                    : 'text-green-500 hover:bg-green-50'
+                                                }`}
+                                                title={u.status === 'active' ? "Suspend User" : "Activate User"}
+                                            >
+                                                <Power className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
               </div>
           </div>
       )}

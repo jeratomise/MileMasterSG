@@ -56,6 +56,7 @@ export interface Bill {
   paymentDetails?: PaymentDetails;
   transactions: Transaction[];
   uploadedAt: string;
+  filePath?: string | null; // Path to Supabase Storage
   riskScore: number; // 0-100
 }
 
