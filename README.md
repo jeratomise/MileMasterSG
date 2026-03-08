@@ -2,19 +2,10 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
-
+# CreditTrack - Help you to track your bill. Simply upload all your bank bills, and it will track, analyze and remind you.
+https://credittrack.elitex.cc/
 This contains everything you need to run your app locally.
 
-View your app in AI Studio: https://ai.studio/apps/888af5ae-f308-405e-aa09-2abf5075c394
-
-## Run Locally
-
-**Prerequisites:**  Node.js
+https://credittrack.elitex.cc/
 
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
